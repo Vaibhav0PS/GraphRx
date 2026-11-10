@@ -1,0 +1,37 @@
+{
+  "data": {
+    "base_url": "https://github.com/hetio/hetionet/raw/main/hetnet/",
+    "raw_dir": "data/raw",
+    "files": {
+      "nodes": "tsv/hetionet-v1.0-nodes.tsv",
+      "edges": "tsv/hetionet-v1.0-edges.sif.gz",
+      "metagraph": "json/hetionet-v1.0-metagraph.json"
+    }
+  },
+  "schema": {
+    "label_edges": [
+      ["Compound", "treats", "Disease"],
+      ["Compound", "palliates", "Disease"]
+    ],
+    "target_edge": ["Compound", "binds", "Gene"],
+    "association_edge": ["Disease", "associates", "Gene"],
+    "context_edge": ["Gene", "participates", "Pathway"]
+  },
+  "subgraph": {
+    "seed_diseases": [],
+    "auto_seed_count": 8,
+    "top_candidates": 5,
+    "min_shared_targets": 2,
+    "max_context_nodes": 40,
+    "min_context_targets": 4,
+    "out_dir": "web/data"
+  },
+  "predictions": {
+    "file": null,
+    "drug_column": "drug_id",
+    "disease_column": "disease_id",
+    "score_column": "score",
+    "top_per_disease": 5,
+    "relation": "predicted_treats"
+  }
+}

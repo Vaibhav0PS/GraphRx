@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drug Repurposing Graph</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="graph"></div>
+
+  <header id="toolbar">
+    <h1>Drug Repurposing Graph</h1>
+    <div id="stats"></div>
+    <div class="row">
+      <input id="search" list="node-names" placeholder="Search a drug, disease, gene..." autocomplete="off">
+      <datalist id="node-names"></datalist>
+      <button id="fit" title="Fit whole graph in view">Fit</button>
+    </div>
+  </header>
+
+  <aside id="legend"></aside>
+
+  <aside id="panel" hidden>
+    <button id="panel-close" title="Close">&times;</button>
+    <div id="panel-body"></div>
+  </aside>
+
+  <div id="message" hidden></div>
+
+  <script src="data/graph.js"></script>
+  <script src="https://unpkg.com/force-graph@1"></script>
+  <script src="app.js"></script>
+</body>
+</html>

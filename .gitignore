@@ -1,0 +1,4 @@
+data/raw/
+web/data/
+__pycache__/
+*.part
