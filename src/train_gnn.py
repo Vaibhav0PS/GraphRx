@@ -22,17 +22,17 @@ Leakage control:
     training pairs only; the full label matrix is dropped after loading.
   - Model selection uses ONE held-out fold (`validation_fold`, e.g. "cv0"), not
     5-fold CV. Its positives are removed from the graph and the supervision and
-    ranked against `val_negative_fraction` of the unknown pairs outside
-    dev_negatives.csv, which are never trained on. Use 1.0 to match train.py's
-    CV scale; AUPRC rises as negatives are subsampled. The grid point and epoch with
+    ranked against `val_negative_fraction` of the development-pool pairs that
+    are neither training negatives nor test negatives. Use 1.0 to match
+    train.py's CV scale; AUPRC rises as negatives are subsampled. The grid point and epoch with
     the best ml.selection_metric are kept (early stopping with `patience`
     evaluations, one every `eval_every` epochs).
   - Each epoch the training positives are split at random into message-passing
     edges (in the graph) and supervision edges (`supervision_fraction`, scored by
     the decoder), so no positive is ever predicted through its own edge.
   - Training negatives are sampled only from dev_negatives.csv, the negatives
-    train.py used for its test models. The test negatives are every other unknown
-    pair, exactly as `eval_neg` in train.py.
+    train.py used for its test models. The test negatives are the label-0 rows
+    of test_scores.csv.gz, which train.py reserved before any training.
   - The test model is retrained on all development positives for the selected
     number of epochs and scored with all development label edges in the graph.
 
@@ -66,7 +66,7 @@ from torch import nn
 import hetionet
 from config import load_config, raw_files, resolve
 from features import Graph
-from train import bootstrap_ci, evaluate, fmt, grid, pair_mask
+from train import bootstrap_ci, cohort_metrics, evaluate, fmt, grid, pair_mask
 
 REQUIRED_RESULTS = ["split.csv", "dev_negatives.csv", "metrics.json", "test_scores.csv.gz"]
 warnings.filterwarnings("ignore", message="Sparse CSR tensor support is in beta")
@@ -344,22 +344,26 @@ def prepare(cfg: dict, rng) -> SimpleNamespace:
     dev_neg, _, _ = mask_from(graph, pd.read_csv(out_dir / "dev_negatives.csv"), kinds, shape)
     if not unknown[dev_neg].all():
         sys.exit("dev_negatives.csv contains known pairs. Re-run `python src/train.py`.")
-    eval_neg = unknown & ~dev_neg          # test negatives, exactly as in train.py
     neg_pool = np.nonzero(dev_neg)         # the only pairs ever used as training negatives
 
-    # --- test_scores.csv.gz must hold exactly the test positives + eval_neg
+    # --- test pairs: the label-0 rows of test_scores.csv.gz are the test negatives
+    # train.py reserved before any training; positives must be exactly split "test".
     frame = pd.read_csv(out_dir / "test_scores.csv.gz")
-    in_frame, fr, fc = mask_from(graph, frame, kinds, shape)
-    expected = eval_neg.copy()
-    expected[test_pos] = True
+    _, fr, fc = mask_from(graph, frame, kinds, shape)
+    is_pos = frame["label"].to_numpy() == 1
+    eval_neg = np.zeros(shape, dtype=bool)
+    eval_neg[fr[~is_pos], fc[~is_pos]] = True
     test_mask = np.zeros(shape, dtype=bool)
     test_mask[test_pos] = True
-    if (len(frame) != expected.sum() or not (in_frame == expected).all()
-            or not ((frame["label"].to_numpy() == 1) == test_mask[fr, fc]).all()):
+    framed_pos = np.zeros(shape, dtype=bool)
+    framed_pos[fr[is_pos], fc[is_pos]] = True
+    if (frame.duplicated(["drug_id", "disease_id"]).any() or not (framed_pos == test_mask).all()
+            or not unknown[eval_neg].all() or (eval_neg & dev_neg).any()):
         sys.exit("test_scores.csv.gz does not match split.csv / dev_negatives.csv. Re-run `python src/train.py`.")
 
-    # --- validation negatives: a fraction of the unknown pairs never trained on
-    cand = np.flatnonzero(eval_neg)
+    # --- validation negatives: development-pool pairs that are not training negatives.
+    # Test negatives are never used for selection.
+    cand = np.flatnonzero(unknown & ~eval_neg & ~dev_neg)
     pick = rng.choice(cand, size=round(gnn["val_negative_fraction"] * len(cand)), replace=False)
     val_neg = np.zeros(shape, dtype=bool)
     val_neg.flat[pick] = True
@@ -431,11 +435,9 @@ def main() -> None:
     scores = predict(model, ctx, dev_pos)
     test = evaluate(scores, test_pos, eval_neg, ks, kinds)
     test_ci = bootstrap_ci(scores, test_pos, eval_neg, ml["bootstrap_samples"], rng)
-    cold = ~np.isin(test_pos[0], dev_pos[0])
-    subsets = {
-        s: evaluate(scores, (test_pos[0][m], test_pos[1][m]), eval_neg, ks, kinds)
-        for s, m in {"cold_drug": cold, "warm_drug": ~cold}.items() if m.any()
-    }
+    warm_drugs = np.zeros(scores.shape[0], dtype=bool)
+    warm_drugs[dev_pos[0]] = True
+    subsets = cohort_metrics(scores, test_pos, eval_neg, warm_drugs, ks, kinds)
     print(f"  {name}: {fmt(test)}")
     print(f"    AUROC 95% CI {test_ci['auroc_ci95']}, AUPRC 95% CI {test_ci['auprc_ci95']}; "
           + ", ".join(f"{s} AUPRC={v['auprc']:.3f}" for s, v in subsets.items()))

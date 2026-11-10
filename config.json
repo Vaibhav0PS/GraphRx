@@ -31,7 +31,7 @@
     "seed": 42,
     "label_edge": ["Compound", "treats", "Disease"],
     "exclude_from_negatives": [["Compound", "palliates", "Disease"]],
-    "split": { "test_fraction": 0.2, "cv_folds": 5, "oof_folds": 10 },
+    "split": { "test_fraction": 0.2, "test_negative_fraction": 0.5, "cv_folds": 5, "oof_folds": 10 },
     "bootstrap_samples": 1000,
     "negatives_per_positive": 10,
     "damping": 0.4,

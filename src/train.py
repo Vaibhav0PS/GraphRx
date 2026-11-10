@@ -3,7 +3,9 @@
 Pipeline (all settings in the "ml" section of config.json):
 
 1. Hold out `test_fraction` of the known label edges (e.g. Compound-treats-
-   Disease) as the test set. The rest is the development set.
+   Disease) as test positives, and `test_negative_fraction` of the unknown
+   pairs as test negatives. Both are reserved before any training or model
+   selection; everything else is the development set.
 2. Training set construction (used for CV folds, the test model and the final
    model alike): given some known positives, sample negatives from pairs with
    no known label edge. Features are computed OUT-OF-FOLD: rows are split into
@@ -13,11 +15,14 @@ Pipeline (all settings in the "ml" section of config.json):
    with all training positives.
 3. Model selection: for each model, every grid point is scored by
    `cv_folds`-fold cross-validation over the development positives.
+   CV training negatives and validation negatives come from the development
+   pool only.
 4. Test: each model is refit on all development positives with its best
-   parameters and evaluated once on the test positives. Negatives are every
-   unknown pair not used for training, so positives are rare, as in reality.
-   AUROC/AUPRC come with a bootstrap 95% CI, and results are also reported
-   separately for test drugs with and without any training indication.
+   parameters and evaluated once on the reserved test positives and test
+   negatives, so positives are rare, as in reality. AUROC/AUPRC come with a
+   bootstrap 95% CI. Results are also reported for cold-start drugs (no
+   development label edge) and warm drugs separately; each cohort's positives
+   and negatives are restricted to that cohort's drugs.
 5. The best model (by CV) is refit on all known labels and scores every
    unknown pair. The top pairs per disease are written as repurposing
    predictions, with the metapaths that pushed each score up as evidence.
@@ -155,6 +160,25 @@ def _average_precision(pos: np.ndarray, neg_sorted: np.ndarray) -> float:
     return float(np.sum(counts / len(pos) * tp / (tp + fp)))
 
 
+def cohort_metrics(scores: np.ndarray, test_pos: tuple, test_neg: np.ndarray, warm_drugs: np.ndarray,
+                   ks, kinds) -> dict:
+    """Metrics for cold-start drugs (no development label edge) and warm drugs separately.
+
+    Positives AND negatives are restricted to the cohort's drugs, so each subset is a
+    self-contained problem: among pairs involving these drugs, find the true ones.
+    `positive_rate` is reported because AUPRC depends on it.
+    """
+    out = {}
+    for name, drugs in {"cold_drug": ~warm_drugs, "warm_drug": warm_drugs}.items():
+        keep = drugs[test_pos[0]]
+        if not keep.any():
+            continue
+        m = evaluate(scores, (test_pos[0][keep], test_pos[1][keep]), test_neg & drugs[:, None], ks, kinds)
+        m["positive_rate"] = m["n_positive"] / (m["n_positive"] + m["n_negative"])
+        out[name] = m
+    return out
+
+
 def bootstrap_ci(scores: np.ndarray, pos: tuple, neg_mask: np.ndarray, n: int, rng) -> dict:
     """95% CI for AUROC/AUPRC by resampling the positives (the scarce, noisy part).
     Negatives are fixed, which allows exact, fast formulas via sorted negatives."""
@@ -256,6 +280,14 @@ def main() -> None:
     excluded &= ~positive
     unknown = ~(positive | excluded)
 
+    # --- reserve the test negatives before anything is trained or selected. Model
+    # selection and training only ever see the development pool.
+    unknown_flat = np.flatnonzero(unknown)
+    n_test_neg = round(len(unknown_flat) * ml["split"]["test_negative_fraction"])
+    test_neg = np.zeros(shape, dtype=bool)
+    test_neg.flat[rng.choice(unknown_flat, size=n_test_neg, replace=False)] = True
+    dev_pool = unknown & ~test_neg
+
     # --- test / development split, then CV folds over development
     pos_r, pos_c = np.nonzero(positive)
     order = rng.permutation(len(pos_r))
@@ -265,6 +297,7 @@ def main() -> None:
     cv_fold = np.arange(len(dev_idx)) % n_cv
     print(f"  Label {builder.label_code}: {len(order)} positives, {len(dev_idx)} development "
           f"({n_cv}-fold CV), {n_test} test; {excluded.sum()} pairs excluded from negatives")
+    print(f"  Unknown pairs: {test_neg.sum():,} reserved as test negatives, {dev_pool.sum():,} for development")
 
     pd.DataFrame({
         "drug_id": graph.ids[kinds[0]][pos_r[order]],
@@ -281,13 +314,13 @@ def main() -> None:
     cv_rows = []
     for f in range(n_cv):
         tr, ho = dev_idx[cv_fold != f], dev_idx[cv_fold == f]
-        ts = TrainingSet(builder, (pos_r[tr], pos_c[tr]), unknown, ml, rng)
-        eval_neg = unknown & ~ts.neg_mask
+        ts = TrainingSet(builder, (pos_r[tr], pos_c[tr]), dev_pool, ml, rng)
+        val_neg = dev_pool & ~ts.neg_mask
         for name, spec in models.items():
             for g, params in enumerate(grids[name]):
                 model = make_model(spec["type"], params, ml["seed"]).fit(ts.X, ts.y)
                 scores = score_all(model, builder, ts.mats, shape)
-                m = evaluate(scores, (pos_r[ho], pos_c[ho]), eval_neg, ml["ranking_ks"], kinds)
+                m = evaluate(scores, (pos_r[ho], pos_c[ho]), val_neg, ml["ranking_ks"], kinds)
                 cv_rows.append({"model": name, "grid_index": g, "params": json.dumps(params), "fold": f, sel: m[sel]})
         print(f"  fold {f + 1}/{n_cv} done")
     cv = pd.DataFrame(cv_rows)
@@ -303,16 +336,16 @@ def main() -> None:
 
     # --- test evaluation: refit on all development positives
     print("Evaluating on the test set ...")
-    dev_ts = TrainingSet(builder, (pos_r[dev_idx], pos_c[dev_idx]), unknown, ml, rng)
-    eval_neg = unknown & ~dev_ts.neg_mask
+    dev_ts = TrainingSet(builder, (pos_r[dev_idx], pos_c[dev_idx]), dev_pool, ml, rng)
+    eval_neg = test_neg
     # Saved so other models (src/train_gnn.py) train on exactly the same negatives.
     dn_r, dn_c = np.nonzero(dev_ts.neg_mask)
     pd.DataFrame({"drug_id": graph.ids[kinds[0]][dn_r], "disease_id": graph.ids[kinds[1]][dn_c]}).to_csv(
         out_dir / "dev_negatives.csv", index=False)
     test_pos = (pos_r[test_idx], pos_c[test_idx])
-    dev_drugs = set(pos_r[dev_idx])
-    cold = np.array([r not in dev_drugs for r in test_pos[0]])
-    subsets = {"cold_drug": cold, "warm_drug": ~cold}
+    warm_drugs = np.zeros(shape[0], dtype=bool)
+    warm_drugs[pos_r[dev_idx]] = True
+    cold = ~warm_drugs[test_pos[0]]
     print(f"  {cold.sum()} of {n_test} test pairs have a {kinds[0]} with no development label edge (cold start)")
 
     results, test_scores, imp_rows = {}, {}, []
@@ -321,10 +354,7 @@ def main() -> None:
         scores = score_all(model, builder, dev_ts.mats, shape)
         test = evaluate(scores, test_pos, eval_neg, ml["ranking_ks"], kinds)
         test_ci = bootstrap_ci(scores, test_pos, eval_neg, ml["bootstrap_samples"], rng)
-        by_subset = {
-            s: evaluate(scores, (test_pos[0][m], test_pos[1][m]), eval_neg, ml["ranking_ks"], kinds)
-            for s, m in subsets.items() if m.any()
-        }
+        by_subset = cohort_metrics(scores, test_pos, eval_neg, warm_drugs, ml["ranking_ks"], kinds)
         results[name] = {
             "type": spec["type"], "params": best_params[name], "cv": {sel: cv_best[name]},
             "test": test, "test_ci95": test_ci, "test_subsets": by_subset,
@@ -342,7 +372,8 @@ def main() -> None:
         "best_model": best_name,
         "selection_metric": sel,
         "split": {"development": int(len(dev_idx)), "test": int(n_test), "cv_folds": n_cv,
-                  "test_cold_drug": int(cold.sum())},
+                  "test_cold_drug": int(cold.sum()), "test_negatives": int(test_neg.sum()),
+                  "development_negative_pool": int(dev_pool.sum())},
         "negatives_per_positive": ml["negatives_per_positive"],
         "features": builder.feature_names,
         "models": results,
