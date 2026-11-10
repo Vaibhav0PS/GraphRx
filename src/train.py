@@ -138,27 +138,32 @@ def evaluate(scores: np.ndarray, pos: tuple, neg_mask: np.ndarray, ks, kinds) ->
     return out
 
 
+def _auroc(pos: np.ndarray, neg_sorted: np.ndarray) -> float:
+    """AUROC with ties counted as half, same as sklearn's roc_auc_score."""
+    below = np.searchsorted(neg_sorted, pos, "left")
+    ties = np.searchsorted(neg_sorted, pos, "right") - below
+    return float(np.mean((below + ties / 2) / len(neg_sorted)))
+
+
+def _average_precision(pos: np.ndarray, neg_sorted: np.ndarray) -> float:
+    """Average precision, same as sklearn's average_precision_score: equal scores form
+    one threshold, and the precision at a threshold counts every pair scored >= it."""
+    values, counts = np.unique(pos, return_counts=True)
+    values, counts = values[::-1], counts[::-1]          # thresholds from high to low
+    tp = np.cumsum(counts)
+    fp = len(neg_sorted) - np.searchsorted(neg_sorted, values, "left")
+    return float(np.sum(counts / len(pos) * tp / (tp + fp)))
+
+
 def bootstrap_ci(scores: np.ndarray, pos: tuple, neg_mask: np.ndarray, n: int, rng) -> dict:
     """95% CI for AUROC/AUPRC by resampling the positives (the scarce, noisy part).
     Negatives are fixed, which allows exact, fast formulas via sorted negatives."""
     neg = np.sort(scores[neg_mask])
     pos_s = scores[pos]
-
-    def auroc(p):
-        below = np.searchsorted(neg, p, "left")
-        ties = np.searchsorted(neg, p, "right") - below
-        return np.mean((below + ties / 2) / len(neg))
-
-    def auprc(p):
-        p = np.sort(p)[::-1]
-        k = np.arange(1, len(p) + 1)
-        neg_above = len(neg) - np.searchsorted(neg, p, "left")
-        return np.mean(k / (k + neg_above))
-
     draws = [rng.choice(pos_s, size=len(pos_s), replace=True) for _ in range(n)]
     return {
-        "auroc_ci95": np.percentile([auroc(d) for d in draws], [2.5, 97.5]).round(4).tolist(),
-        "auprc_ci95": np.percentile([auprc(d) for d in draws], [2.5, 97.5]).round(4).tolist(),
+        "auroc_ci95": np.percentile([_auroc(d, neg) for d in draws], [2.5, 97.5]).round(4).tolist(),
+        "auprc_ci95": np.percentile([_average_precision(d, neg) for d in draws], [2.5, 97.5]).round(4).tolist(),
     }
 
 
