@@ -89,6 +89,7 @@
   }
 
   const isVisible = (n) => !hiddenKinds.has(n.kind);
+  const isCandidate = (n) => Array.isArray(n.candidate_for) && n.candidate_for.length > 0;
   const endpoint = (x) => (typeof x === "object" ? x : byId.get(x));
 
   // ---------- graph ----------
@@ -160,7 +161,9 @@
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    if (n.role === roles.candidate || n.role === roles.predicted) {
+    // A drug can be a known treatment for one disease and a candidate for another,
+    // so the candidate marker follows candidate_for, not the node's single role.
+    if (isCandidate(n) || n.role === roles.predicted) {
       ctx.lineWidth = 2 / scale;
       ctx.strokeStyle = GOLD;
       ctx.stroke();
@@ -434,7 +437,6 @@
   // ---------- toolbar ----------
   const countBy = (key) => data.nodes.reduce((m, n) => ((m[n[key]] = (m[n[key]] || 0) + 1), m), {});
   const kindCounts = countBy("kind");
-  const roleCounts = countBy("role");
 
   document.getElementById("stats").textContent =
     `${data.nodes.length.toLocaleString()} nodes · ${data.links.length.toLocaleString()} links · ` +
@@ -487,10 +489,11 @@
   }
 
   legend.append(el("h2", {}, "Markers"));
-  if (roleCounts[roles.candidate]) {
+  const candidateCount = data.nodes.filter(isCandidate).length;
+  if (candidateCount) {
     legend.append(
       el("div", { className: "static" }, el("span", { className: "ring" }),
-        `${meta.kinds.drug} candidate (heuristic)`, el("span", { className: "count" }, roleCounts[roles.candidate]))
+        `${meta.kinds.drug} candidate (heuristic)`, el("span", { className: "count" }, candidateCount))
     );
   }
   const predCount = data.links.filter((l) => l.rel === predRel).length;
