@@ -6,6 +6,7 @@
   --muted: #8a8f98;
   --accent: #a78bfa;
   --gold: #ffd54f;
+  --gold-soft: rgba(255, 213, 79, 0.55);
 }
 
 * { box-sizing: border-box; }
@@ -60,6 +61,7 @@ button:hover { border-color: var(--accent); }
 
 .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .ring { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--gold); flex-shrink: 0; }
+.ring.dashed { border-style: dotted; }
 .dash { width: 18px; border-top: 2px dashed var(--gold); flex-shrink: 0; }
 
 #panel {
@@ -82,6 +84,9 @@ button:hover { border-color: var(--accent); }
 #panel h2 { margin: 0 24px 6px 0; font-size: 18px; }
 #panel h3 { margin: 16px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 #panel .meta { color: var(--muted); }
+#panel .intro { line-height: 1.45; margin-bottom: 4px; }
+#panel h3.group { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--text); font-weight: 600; }
+#panel h3.group .chip { cursor: pointer; }
 #panel .badge {
   display: inline-block;
   padding: 1px 8px;
@@ -131,9 +136,16 @@ button:hover { border-color: var(--accent); }
 #panel .why .score { margin-left: auto; color: var(--gold); }
 #panel .chip { display: inline-flex; align-items: center; gap: 4px; }
 #panel .chip.clickable:hover { text-decoration: underline; }
-#panel .metapath { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; margin: 8px 0 3px; color: var(--muted); font-size: 12px; }
-#panel .metapath b { color: var(--text); font-weight: 600; }
-#panel .metapath .desc { font-size: 11px; }
+#panel .metapath { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin: 10px 0 3px; font-size: 12px; }
+#panel .metapath .desc { color: var(--text); font-weight: 500; flex: 1 1 100%; }
+#panel .metapath .code {
+  font: 10px ui-monospace, Consolas, monospace;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+#panel .metapath .score { margin-left: auto; color: var(--gold); }
 #panel .path {
   padding: 4px 6px;
   margin: 2px 0;
@@ -144,6 +156,11 @@ button:hover { border-color: var(--accent); }
 #panel .path:hover { background: rgba(255, 255, 255, 0.06); }
 #panel .path.active { border-color: var(--gold); background: rgba(255, 213, 79, 0.12); }
 #panel .chain { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px; line-height: 1.5; }
+/* A relation and the node it leads to stay together; a long node name wraps inside. */
+#panel .chain .step { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; }
+#panel .chain .rel { white-space: nowrap; }
+#panel .chip { min-width: 0; overflow-wrap: anywhere; }
+#panel .chip .dot { flex-shrink: 0; }
 #panel .chain .rel { color: var(--muted); font-size: 11px; }
 #panel .share { color: var(--muted); font-size: 11px; text-align: right; }
 

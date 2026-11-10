@@ -108,6 +108,11 @@ Then open `web/index.html` in a browser. It needs internet access to load the
 - Use the legend checkboxes to hide node types.
 - Gold rings mark **heuristic candidates**: drugs that bind several genes
   associated with a disease but are not known treatments for it.
+- With nothing selected, the side panel lists the **top predictions** grouped
+  by disease. Click a drug to open it, or press Escape on the list to hide the panel.
+- Gold is used only for predictions: dashed gold links are predicted
+  treatments, a solid gold ring marks a drug with a prediction, and a dotted
+  ring marks a heuristic candidate.
 - Model predictions show as gold dashed links once you add them (see below).
 - Select a drug or disease with predictions to see **Why predicted?**: the
   strongest concrete paths behind each prediction, grouped by metapath, with

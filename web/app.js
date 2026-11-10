@@ -25,15 +25,27 @@
   const predRel = meta.prediction_relation;
   const labelRels = new Set(meta.label_relations);
 
-  // ---------- colors: evenly spaced hues, one per node kind in the data ----------
-  const kinds = [...new Set(data.nodes.map((n) => n.kind))].sort();
-  const kindColor = {};
-  kinds.forEach((k, i) => {
-    kindColor[k] = `hsl(${Math.round((360 * i) / kinds.length + 200) % 360}, 70%, 62%)`;
-  });
+  // ---------- colors: one hue per node kind; yellow-orange is kept free for predictions ----------
   const css = getComputedStyle(document.documentElement);
   const GOLD = css.getPropertyValue("--gold").trim();
   const TEXT = css.getPropertyValue("--text").trim();
+  const BG = css.getPropertyValue("--bg").trim();
+  const GOLD_SOFT = css.getPropertyValue("--gold-soft").trim(); // predicted links in the overview
+  const kinds = [...new Set(data.nodes.map((n) => n.kind))].sort();
+  // The kinds that play the main roles (from the data's meta) get the most distinct
+  // hues; any other kinds take the remaining ones in alphabetical order.
+  const ROLE_HUES = { drug: 205, disease: 275, target: 335, context: 160 };
+  const SPARE_HUES = [95, 5, 240, 185, 305, 135, 225, 355];
+  const hueOf = {};
+  Object.entries(ROLE_HUES).forEach(([role, hue]) => {
+    const kind = meta.kinds[role];
+    if (kind && kinds.includes(kind)) hueOf[kind] = hue;
+  });
+  kinds.filter((k) => !(k in hueOf)).forEach((k, i) => {
+    // Past the spare list, spread evenly over the hues outside the gold band (25-80).
+    hueOf[k] = i < SPARE_HUES.length ? SPARE_HUES[i] : (80 + (i * 137.5) % 305) % 360;
+  });
+  const kindColor = Object.fromEntries(kinds.map((k) => [k, `hsl(${hueOf[k]}, 68%, 64%)`]));
 
   // ---------- adjacency ----------
   const byId = new Map(data.nodes.map((n) => [n.id, n]));
@@ -91,11 +103,14 @@
   const isVisible = (n) => !hiddenKinds.has(n.kind);
   const isCandidate = (n) => Array.isArray(n.candidate_for) && n.candidate_for.length > 0;
   const endpoint = (x) => (typeof x === "object" ? x : byId.get(x));
+  const predLinks = data.links.filter((l) => l.rel === predRel);
+  // Drugs with at least one model prediction (the source end of predicted links).
+  const predictedDrugs = new Set(predLinks.map((l) => byId.get(l.source)));
 
   // ---------- graph ----------
   const graph = ForceGraph()(document.getElementById("graph"))
     .graphData({ nodes: data.nodes, links: data.links })
-    .backgroundColor(css.getPropertyValue("--bg").trim())
+    .backgroundColor(BG)
     .nodeId("id")
     .nodeLabel(() => "")
     .autoPauseRedraw(false)
@@ -132,14 +147,16 @@
       n.fy = n.y;
     });
 
-  graph.d3Force("charge").strength(-45);
-  graph.d3Force("link").distance(28);
+  // Seed diseases are hubs that otherwise pile up in the middle with their labels on
+  // top of each other; a much stronger repulsion keeps them apart.
+  graph.d3Force("charge").strength((n) => (n.role === roles.seed ? -900 : -40));
+  graph.d3Force("link").distance((l) => (l.rel === predRel ? 60 : 28));
   applyVisibility();
 
   let fitted = false;
   graph.onEngineStop(() => {
     if (!fitted) {
-      graph.zoomToFit(600, 60);
+      fitAll();
       fitted = true;
     }
   });
@@ -161,27 +178,41 @@
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // A drug can be a known treatment for one disease and a candidate for another,
-    // so the candidate marker follows candidate_for, not the node's single role.
-    if (isCandidate(n) || n.role === roles.predicted) {
+    // Model predictions get a solid gold ring; heuristic candidates a dashed one. A drug
+    // can be a known treatment for one disease and a candidate for another, so the
+    // candidate marker follows candidate_for, not the node's single role.
+    if (predictedDrugs.has(n) || isCandidate(n)) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r + 1.2 / scale, 0, 2 * Math.PI);
       ctx.lineWidth = 2 / scale;
       ctx.strokeStyle = GOLD;
+      ctx.setLineDash(predictedDrugs.has(n) ? [] : [2.5 / scale, 2 / scale]);
       ctx.stroke();
+      ctx.setLineDash([]);
     }
     if (n === selectedNode) {
-      ctx.lineWidth = 2.5 / scale;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r + 3 / scale, 0, 2 * Math.PI);
+      ctx.lineWidth = 2 / scale;
       ctx.strokeStyle = TEXT;
       ctx.stroke();
     }
 
     const showLabel = n.role === roles.seed || active || scale > 2.5;
     if (showLabel && !dimmed) {
-      const size = Math.max(11 / scale, 1.5);
-      ctx.font = `${n.role === roles.seed ? "600 " : ""}${size}px Inter, Segoe UI, sans-serif`;
+      const seed = n.role === roles.seed;
+      const size = Math.max((seed ? 13 : 11) / scale, 1.5);
+      ctx.font = `${seed ? "600 " : ""}${size}px Inter, Segoe UI, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
+      const y = n.y + r + 3 / scale;
+      // Dark outline so labels stay readable on top of edges and other nodes.
+      ctx.lineJoin = "round";
+      ctx.lineWidth = 3.5 / scale;
+      ctx.strokeStyle = BG;
+      ctx.strokeText(n.name, n.x, y);
       ctx.fillStyle = TEXT;
-      ctx.fillText(n.name, n.x, n.y + r + 2 / scale);
+      ctx.fillText(n.name, n.x, y);
     }
     ctx.globalAlpha = 1;
   }
@@ -191,7 +222,7 @@
       if (!highlightLinks.has(l)) return "rgba(255,255,255,0.03)";
       return l.rel === predRel || activePath ? GOLD : "rgba(255,255,255,0.75)";
     }
-    if (l.rel === predRel) return GOLD;
+    if (l.rel === predRel) return GOLD_SOFT;
     if (labelRels.has(l.rel)) return "rgba(255,255,255,0.22)";
     return "rgba(255,255,255,0.09)";
   }
@@ -206,18 +237,24 @@
   const panel = document.getElementById("panel");
   const panelBody = document.getElementById("panel-body");
 
+  // node = null goes back to the overview (top predictions) in the panel.
   function selectNode(node) {
     activePath = null;
     markActiveItem();
     selectedNode = node;
     setHighlight(hoverNode || node);
     if (!node) {
-      panel.hidden = true;
+      renderOverview();
       return;
     }
-    graph.centerAt(node.x, node.y, 700);
-    graph.zoom(Math.max(graph.zoom(), 2.5), 700);
     renderPanel(node);
+    // Fit the node and all its visible neighbors in the part of the view not under the panel.
+    fitNodes(new Set([node, ...[...node.neighbors].filter(isVisible)]));
+  }
+
+  function closePanel() {
+    selectNode(null);
+    panel.hidden = true;
   }
 
   function el(tag, attrs = {}, ...children) {
@@ -290,8 +327,45 @@
     panel.hidden = false;
   }
 
+  // ---------- overview: what the panel shows when nothing is selected ----------
+  function renderOverview() {
+    panelBody.replaceChildren();
+    const drugWord = meta.kinds.drug.toLowerCase();
+    const diseaseWord = meta.kinds.disease.toLowerCase();
+    panelBody.append(el("h2", {}, "Top predictions"));
+    if (!predLinks.length) {
+      panelBody.append(el("div", { className: "meta" },
+        `No model predictions in this graph. Run the training scripts, then rebuild it. ` +
+        `Click any node to explore its connections.`));
+      panel.hidden = false;
+      return;
+    }
+    panelBody.append(el("div", { className: "meta intro" },
+      `New ${drugWord} → ${diseaseWord} links the model predicts, grouped by ${diseaseWord}. ` +
+      `Click a ${drugWord} to see why it was predicted.`));
+
+    // Diseases ordered by their best prediction; drugs inside by score.
+    const byDisease = new Map();
+    predLinks.forEach((l) => {
+      const d = endpoint(l.target);
+      if (!byDisease.has(d)) byDisease.set(d, []);
+      byDisease.get(d).push(l);
+    });
+    const best = (ls) => Math.max(...ls.map((l) => l.score ?? 0));
+    [...byDisease.entries()]
+      .sort((a, b) => best(b[1]) - best(a[1]) || a[0].name.localeCompare(b[0].name))
+      .forEach(([disease, ls]) => {
+        const head = el("h3", { className: "group" }, nodeChip(disease, () => selectNode(disease)));
+        const items = ls
+          .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+          .map((l) => nodeItem(endpoint(l.source), l.score != null ? l.score.toFixed(3) : ""));
+        panelBody.append(head, el("ul", {}, ...items));
+      });
+    panel.hidden = false;
+  }
+
   // ---------- explanation paths ("Why predicted?") ----------
-  const pct = (x) => `${Math.round(100 * x)}%`;
+  const pct = (x) => (x > 0 && x < 0.01 ? "<1%" : `${Math.round(100 * x)}%`);
   const label = (s) => s.replaceAll("_", " ");
 
   function nodeChip(node, onclick) {
@@ -318,9 +392,15 @@
     const ok = path.nodes.every((id) => byId.has(id)) && path.edges.every((e) => byId.has(e.source) && byId.has(e.target));
     const chain = el("div", { className: "chain" });
     if (ok) {
+      // Each relation is kept on one line with the node it leads to, so a line break
+      // never separates "—causes→" from what is caused.
       path.nodes.forEach((id, i) => {
-        if (i > 0) chain.append(el("span", { className: "rel" }, relationText(path.edges[i - 1], path.nodes[i - 1])));
-        chain.append(nodeChip(byId.get(id)));
+        if (i === 0) {
+          chain.append(nodeChip(byId.get(id)));
+          return;
+        }
+        chain.append(el("span", { className: "step" },
+          el("span", { className: "rel" }, relationText(path.edges[i - 1], path.nodes[i - 1])), nodeChip(byId.get(id))));
       });
     } else {
       chain.append("Path nodes are missing from the graph data.");
@@ -361,8 +441,10 @@
       });
       groups.forEach((items, metapath) => {
         const contribution = items[0][0].contribution;
-        const head = el("div", { className: "metapath" }, el("b", {}, metapath));
-        if (meta.metapaths && meta.metapaths[metapath]) head.append(" ", el("span", { className: "desc" }, meta.metapaths[metapath]));
+        // Readable pattern first; the metapath code is kept as a small tag for the report.
+        const desc = (meta.metapaths && meta.metapaths[metapath]) || metapath;
+        const head = el("div", { className: "metapath" }, el("span", { className: "desc" }, desc),
+          el("span", { className: "code", title: "Metapath code" }, metapath));
         if (contribution != null) {
           head.append(el("span", { className: "score", title: "Contribution to the model's log-odds" }, `+${contribution.toFixed(2)}`));
         }
@@ -413,25 +495,33 @@
     markActiveItem();
   }
 
-  // Zoom to the given nodes, keeping them clear of the side panel.
-  function fitNodes(nodes, ms = 700, padding = 70) {
+  function fitAll(ms = 700) {
+    fitNodes(new Set(data.nodes.filter(isVisible)), ms, 40);
+  }
+
+  // Zoom to the given nodes, keeping them clear of the side panel on the right and
+  // the toolbar/legend column on the left.
+  function fitNodes(nodes, ms = 700, padding = 60) {
     const box = graph.getGraphBbox((x) => nodes.has(x));
     if (!box) return;
-    const covered = panel.hidden ? 0 : panel.getBoundingClientRect().width + 14;
-    const w = Math.max(window.innerWidth - covered - 2 * padding, 50);
+    const right = panel.hidden ? 0 : window.innerWidth - panel.getBoundingClientRect().left;
+    const left = Math.max(...["toolbar", "legend"].map((id) => document.getElementById(id).getBoundingClientRect().right));
+    const w = Math.max(window.innerWidth - left - right - 2 * padding, 50);
     const h = Math.max(window.innerHeight - 2 * padding, 50);
     const k = Math.min(w / Math.max(box.x[1] - box.x[0], 1), h / Math.max(box.y[1] - box.y[0], 1), 8);
-    const cx = (box.x[0] + box.x[1]) / 2 + covered / 2 / k;
-    const cy = (box.y[0] + box.y[1]) / 2;
-    graph.centerAt(cx, cy, ms);
+    // Put the box centre at the centre of the free area instead of the screen centre.
+    const shift = (left - right) / 2 / k;
+    graph.centerAt((box.x[0] + box.x[1]) / 2 - shift, (box.y[0] + box.y[1]) / 2, ms);
     graph.zoom(k, ms);
   }
 
-  document.getElementById("panel-close").onclick = () => selectNode(null);
+  // × on a node goes back to the overview; × on the overview hides the panel.
+  document.getElementById("panel-close").onclick = () => (selectedNode ? selectNode(null) : closePanel());
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (activePath) clearPath();
-    else selectNode(null);
+    else if (selectedNode) selectNode(null);
+    else closePanel();
   });
 
   // ---------- toolbar ----------
@@ -462,7 +552,7 @@
   search.addEventListener("change", runSearch);
   search.addEventListener("keydown", (e) => e.key === "Enter" && runSearch());
 
-  document.getElementById("fit").onclick = () => graph.zoomToFit(600, 60);
+  document.getElementById("fit").onclick = () => fitAll();
 
   // ---------- legend ----------
   const legend = document.getElementById("legend");
@@ -489,21 +579,23 @@
   }
 
   legend.append(el("h2", {}, "Markers"));
+  if (predLinks.length) {
+    legend.append(
+      el("div", { className: "static" }, el("span", { className: "dash" }),
+        label(predRel), el("span", { className: "count" }, predLinks.length)),
+      el("div", { className: "static" }, el("span", { className: "ring" }),
+        `${meta.kinds.drug} with a prediction`, el("span", { className: "count" }, predictedDrugs.size))
+    );
+  }
   const candidateCount = data.nodes.filter(isCandidate).length;
   if (candidateCount) {
     legend.append(
-      el("div", { className: "static" }, el("span", { className: "ring" }),
+      el("div", { className: "static" }, el("span", { className: "ring dashed" }),
         `${meta.kinds.drug} candidate (heuristic)`, el("span", { className: "count" }, candidateCount))
-    );
-  }
-  const predCount = data.links.filter((l) => l.rel === predRel).length;
-  if (predCount) {
-    legend.append(
-      el("div", { className: "static" }, el("span", { className: "dash" }),
-        predRel.replaceAll("_", " "), el("span", { className: "count" }, predCount))
     );
   }
   legend.append(el("div", { className: "static meta" }, "Bigger node = more connections"));
 
   window.addEventListener("resize", () => graph.width(window.innerWidth).height(window.innerHeight));
+  renderOverview();
 })();
