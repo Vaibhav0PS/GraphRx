@@ -217,6 +217,7 @@ class TrainingSet:
 
     def __init__(self, builder: FeatureBuilder, pos: tuple, neg_pool: np.ndarray, ml: dict, rng):
         pr, pc = pos
+        self.pos = (pr, pc)  # label edges in the graph behind `mats`
         n_neg = ml["negatives_per_positive"] * len(pr)
         nr, nc = sample(neg_pool, n_neg, rng)
         self.neg_mask = np.zeros(neg_pool.shape, dtype=bool)
@@ -403,6 +404,10 @@ def main() -> None:
     model = make_model(spec["type"], best_params[best_name], ml["seed"]).fit(ts.X, ts.y)
     scores = score_all(model, builder, ts.mats, shape)
     write_predictions(cfg, graph, builder, ts.mats, model, spec["type"], scores, unknown, kinds, nodes)
+    # The label edges in the graph that scored the predictions, so explanations
+    # (src/explain.py) use exactly that graph and never show a held-out edge.
+    pd.DataFrame({"drug_id": graph.ids[kinds[0]][ts.pos[0]], "disease_id": graph.ids[kinds[1]][ts.pos[1]]}).to_csv(
+        resolve(cfg["predictions"]["graph_label_edges_file"]), index=False)
 
     print(f"Done in {time.time() - t0:.0f}s. Results in {out_dir}")
     print("Next: python src/plots.py   then   python src/build_subgraph.py")

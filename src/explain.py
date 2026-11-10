@@ -14,9 +14,13 @@ metapath, the best weight with which each node can still reach the disease
 that can reach the disease, ranked by their weight so far times that best
 completion, `beam_width` partial paths per hop.
 
-The graph is the one the final model was trained on: all known label edges.
-Each output edge is in the orientation stored in the edge file, with the
-relation name from the metagraph.
+The graph is the one that scored the predictions: its label edges (e.g.
+Compound-treats-Disease) are read from predictions.graph_label_edges_file,
+written by train.py. That is all known label edges by default, or only the
+development edges when ml.final.retrain_on_all_labels is false, so a path
+never uses an edge the model did not see. Each output edge is in the
+orientation stored in the edge file, with the relation name from the
+metagraph.
 
 Settings: ml.final.explain (paths_per_metapath, beam_width,
 sanity_check_rows), ml.damping, predictions.file / evidence_column /
@@ -136,6 +140,22 @@ class PathFinder:
         return ids, edges
 
 
+def scoring_graph(cfg: dict, graph: Graph, builder: FeatureBuilder, edges: pd.DataFrame) -> Graph:
+    """The graph with its label edges replaced by those that scored the predictions."""
+    path = resolve(cfg["predictions"]["graph_label_edges_file"])
+    if not path.exists():
+        sys.exit(f"No {path}.\nRun first:  python src/train.py")
+    used = pd.read_csv(path, dtype=str)
+    known = edges[edges["metaedge"] == builder.label_code]
+    stray = set(zip(used["drug_id"], used["disease_id"])) - set(zip(known["source"], known["target"]))
+    if stray:
+        sys.exit(f"{path} has {len(stray)} pairs that are not {builder.label_code} edges. Rerun python src/train.py.")
+    rows = graph.lookup(builder.drug_kind, used["drug_id"])
+    cols = graph.lookup(builder.disease_kind, used["disease_id"])
+    print(f"  Label edges in the scoring graph: {len(rows)} of {len(known)} known {builder.label_code} edges")
+    return graph.with_edges(builder.label_code, rows, cols)
+
+
 def raw_dwpc(builder: FeatureBuilder, graph: Graph) -> dict[str, np.ndarray]:
     """Untransformed DWPC per metapath on the full graph, for consistency checks."""
     rows, cols = graph.matrices[builder.label_code].nonzero()
@@ -177,6 +197,8 @@ def main() -> None:
     nodes, edges, metagraph = hetionet.load(cfg, codes=FeatureBuilder.required_codes(ml, metagraph))
     graph = Graph(nodes, edges, metagraph)
     builder = FeatureBuilder(graph, ml)
+    graph = scoring_graph(cfg, graph, builder, edges)
+    builder.graph = graph
     finder = PathFinder(graph, builder, edges)
     dwpc = raw_dwpc(builder, graph)
 

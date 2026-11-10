@@ -119,6 +119,7 @@
     "top_per_disease": 5,
     "relation": "predicted_treats",
     "explanations_file": "results/explanations.json",
+    "graph_label_edges_file": "results/prediction_graph_label_edges.csv",
     "show_explanation_paths": true
   }
 }
