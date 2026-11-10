@@ -80,7 +80,34 @@
     "final": {
       "retrain_on_all_labels": true,
       "top_per_disease": 20,
-      "max_evidence": 3
+      "max_evidence": 3,
+      "explain": {
+        "paths_per_metapath": 2,
+        "beam_width": 200,
+        "sanity_check_rows": 5
+      }
+    }
+  },
+  "gnn": {
+    "model_name": "rgcn",
+    "seed": 42,
+    "validation_fold": "cv0",
+    "val_negative_fraction": 0.2,
+    "supervision_fraction": 0.3,
+    "negatives_per_positive": 10,
+    "max_epochs": 300,
+    "eval_every": 10,
+    "patience": 5,
+    "graph_edges": "all",
+    "graph_exclude": [],
+    "num_bases": 8,
+    "decoder": "distmult",
+    "grid": {
+      "hidden_dim": [64],
+      "num_layers": [2],
+      "dropout": [0.2],
+      "lr": [0.01],
+      "weight_decay": [0.0, 0.00001]
     }
   },
   "predictions": {
@@ -88,7 +115,10 @@
     "drug_column": "drug_id",
     "disease_column": "disease_id",
     "score_column": "score",
+    "evidence_column": "evidence",
     "top_per_disease": 5,
-    "relation": "predicted_treats"
+    "relation": "predicted_treats",
+    "explanations_file": "results/explanations.json",
+    "show_explanation_paths": true
   }
 }

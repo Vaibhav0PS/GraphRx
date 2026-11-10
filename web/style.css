@@ -109,6 +109,44 @@ button:hover { border-color: var(--accent); }
 #panel li:hover { background: rgba(255, 255, 255, 0.06); }
 #panel li .score { margin-left: auto; color: var(--gold); }
 
+/* "Why predicted?" explanation paths */
+#panel .why {
+  margin: 6px 0 10px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--gold);
+  background: rgba(255, 213, 79, 0.05);
+  border-radius: 4px;
+}
+#panel .why summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  list-style: none;
+}
+#panel .why summary::-webkit-details-marker { display: none; }
+#panel .why summary::before { content: "▸"; color: var(--muted); margin-right: 2px; }
+#panel .why[open] summary::before { content: "▾"; }
+#panel .why .score { margin-left: auto; color: var(--gold); }
+#panel .chip { display: inline-flex; align-items: center; gap: 4px; }
+#panel .chip.clickable:hover { text-decoration: underline; }
+#panel .metapath { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; margin: 8px 0 3px; color: var(--muted); font-size: 12px; }
+#panel .metapath b { color: var(--text); font-weight: 600; }
+#panel .metapath .desc { font-size: 11px; }
+#panel .path {
+  padding: 4px 6px;
+  margin: 2px 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#panel .path:hover { background: rgba(255, 255, 255, 0.06); }
+#panel .path.active { border-color: var(--gold); background: rgba(255, 213, 79, 0.12); }
+#panel .chain { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px; line-height: 1.5; }
+#panel .chain .rel { color: var(--muted); font-size: 11px; }
+#panel .share { color: var(--muted); font-size: 11px; text-align: right; }
+
 #message {
   position: fixed;
   top: 50%;

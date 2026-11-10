@@ -11,6 +11,7 @@ pip install -r requirements.txt
 python src/download_data.py      # ~15 MB into data/raw/
 python src/train.py              # ~1 min: CV, test evaluation, predictions
 python src/plots.py              # figures in results/figures/
+python src/explain.py            # concrete graph paths behind each prediction
 python src/build_subgraph.py     # writes web/data/graph.js (with predictions)
 ```
 
@@ -49,6 +50,8 @@ Task: predict missing `Compound -treats-> Disease` edges (link prediction).
 | `feature_importance.csv` | LR coefficients and XGBoost gain |
 | `split.csv` | Which positives went to test and to which CV fold |
 | `predictions.csv` | Repurposing candidates with evidence |
+| `explanations.json` | Top concrete paths per prediction and evidence metapath |
+| `dev_negatives.csv` | Training negatives of the test-evaluation model (shared with other models) |
 | `figures/` | ROC, PR, model comparison, feature importance |
 
 Then open `web/index.html` in a browser. It needs internet access to load the
@@ -62,6 +65,10 @@ Then open `web/index.html` in a browser. It needs internet access to load the
 - Gold rings mark **heuristic candidates**: drugs that bind several genes
   associated with a disease but are not known treatments for it.
 - Model predictions show as gold dashed links once you add them (see below).
+- Select a drug or disease with predictions to see **Why predicted?**: the
+  strongest concrete paths behind each prediction, grouped by metapath, with
+  the metapath's contribution to the score. Click a path to highlight it in
+  the graph. Escape clears it.
 
 ## Configuration (`config.json`)
 
@@ -90,6 +97,7 @@ src/download_data.py   downloads the data
 src/features.py        metapath parsing and DWPC feature matrices
 src/train.py           split, CV, models, evaluation, predictions
 src/plots.py           result figures
+src/explain.py         path explanations for predictions
 src/build_subgraph.py  extracts the subgraph and writes web/data/graph.js
 web/                   viewer (index.html, app.js, style.css)
 ```

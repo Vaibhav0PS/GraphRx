@@ -300,6 +300,10 @@ def main() -> None:
     print("Evaluating on the test set ...")
     dev_ts = TrainingSet(builder, (pos_r[dev_idx], pos_c[dev_idx]), unknown, ml, rng)
     eval_neg = unknown & ~dev_ts.neg_mask
+    # Saved so other models (src/train_gnn.py) train on exactly the same negatives.
+    dn_r, dn_c = np.nonzero(dev_ts.neg_mask)
+    pd.DataFrame({"drug_id": graph.ids[kinds[0]][dn_r], "disease_id": graph.ids[kinds[1]][dn_c]}).to_csv(
+        out_dir / "dev_negatives.csv", index=False)
     test_pos = (pos_r[test_idx], pos_c[test_idx])
     dev_drugs = set(pos_r[dev_idx])
     cold = np.array([r not in dev_drugs for r in test_pos[0]])

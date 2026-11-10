@@ -17,6 +17,11 @@ at least `min_shared_targets` of its associated targets. This is a simple
 heuristic, not an ML prediction. Model predictions can be overlaid with
 --predictions.
 
+If the explanations file from src/explain.py exists (and
+predictions.show_explanation_paths is true), the paths that explain each
+shown prediction are added to the subgraph and attached to its link, so the
+viewer can show why it was predicted.
+
 Usage:
     python src/build_subgraph.py
     python src/build_subgraph.py --diseases "asthma" "psoriasis"
@@ -33,6 +38,7 @@ import pandas as pd
 
 import hetionet
 from config import load_config, resolve
+from features import parse_metapath
 
 ROLE_SEED = "seed"
 ROLE_KNOWN = "known"
@@ -104,7 +110,35 @@ def load_predictions(cfg: dict, path) -> pd.DataFrame:
     return df.sort_values("score", ascending=False).groupby("b").head(cfg["top_per_disease"])
 
 
-def build(nodes, edges, metagraph, cfg, seed_names, predictions) -> dict:
+def load_explanations(path) -> dict[tuple[str, str], list[dict]]:
+    """(drug id, disease id) -> explanation paths, as written by src/explain.py."""
+    with open(path, encoding="utf-8") as f:
+        rows = json.load(f)
+    return {(r["drug_id"], r["disease_id"]): r["paths"] for r in rows}
+
+
+def is_symmetric(et: hetionet.EdgeType) -> bool:
+    """Undirected edge between two nodes of one kind, e.g. Gene-interacts-Gene."""
+    return et.source == et.target and et.direction == "both"
+
+
+def describe_metapath(text: str, metagraph: hetionet.Metagraph) -> str:
+    """'CbGaD' -> 'Compound —binds→ Gene ←associates— Disease' (arrows follow the stored edge)."""
+    hops = parse_metapath(text, metagraph)
+    parts = [hops[0].source]
+    for h in hops:
+        et = metagraph.edge_types[h.code]
+        if is_symmetric(et):
+            parts.append(f"—{et.relation}—")
+        elif h.transpose:
+            parts.append(f"←{et.relation}—")
+        else:
+            parts.append(f"—{et.relation}→")
+        parts.append(h.target)
+    return " ".join(parts)
+
+
+def build(nodes, edges, metagraph, cfg, seed_names, predictions, explanations=None) -> dict:
     schema, sub = cfg["schema"], cfg["subgraph"]
     kinds = schema_kinds(schema)
 
@@ -154,16 +188,30 @@ def build(nodes, edges, metagraph, cfg, seed_names, predictions) -> dict:
         assoc[["source", "target"]].assign(rel=schema["association_edge"][1]),
         ctx[["source", "target"]].assign(rel=schema["context_edge"][1]),
     ]
-    predicted = set()
+    predicted, path_nodes = set(), set()
+    explained: dict[tuple[str, str], list[dict]] = {}
     pred_rel = cfg["predictions"]["relation"]
     if predictions is not None:
         pred = predictions[predictions["b"].isin(seed_set)]
         predicted = set(pred["a"])
+        if explanations is not None:
+            path_edges = []
+            for pair in zip(pred["a"], pred["b"]):
+                paths = explanations.get(pair, [])
+                explained[pair] = [
+                    {k: p[k] for k in ("metapath", "contribution", "share", "nodes", "edges") if k in p} for p in paths
+                ]
+                for p in paths:
+                    path_nodes.update(p["nodes"])
+                    path_edges += p["edges"]
+            if path_edges:
+                # Edges are in stored orientation, so duplicates of edges already kept drop out below.
+                frames.append(pd.DataFrame(path_edges, columns=["source", "target", "rel"]))
         frames.append(pred.rename(columns={"a": "source", "b": "target"}).assign(rel=pred_rel))
 
     links = pd.concat(frames, ignore_index=True).drop_duplicates(["source", "target", "rel"])
 
-    keep = seed_set | drugs | targets | context | predicted
+    keep = seed_set | drugs | targets | context | predicted | path_nodes
     node_df = nodes[nodes["id"].isin(keep)]
     missing = keep - set(node_df["id"])
     if missing:
@@ -191,7 +239,24 @@ def build(nodes, edges, metagraph, cfg, seed_names, predictions) -> dict:
         link = {"source": row.source, "target": row.target, "rel": row.rel}
         if row.rel == pred_rel:
             link["score"] = round(float(row.score), 4)
+            if explanations is not None:
+                link["explanations"] = explained.get((row.source, row.target), [])
         out_links.append(link)
+
+    meta_extra = {}
+    if explanations is not None:
+        used = sorted({p["metapath"] for paths in explained.values() for p in paths})
+        kinds_used = set(node_df["kind"])
+        meta_extra = {
+            "metapaths": {t: describe_metapath(t, metagraph) for t in used},
+            # [kind, relation, kind] edge types whose direction carries no meaning
+            "symmetric_edges": sorted(
+                [et.source, et.relation, et.target]
+                for et in metagraph.edge_types.values() if is_symmetric(et) and et.source in kinds_used
+            ),
+            "explained_links": sum(1 for paths in explained.values() if paths),
+            "explanation_paths": sum(len(paths) for paths in explained.values()),
+        }
 
     return {
         "meta": {
@@ -203,6 +268,7 @@ def build(nodes, edges, metagraph, cfg, seed_names, predictions) -> dict:
             "roles": {"seed": ROLE_SEED, "known": ROLE_KNOWN, "candidate": ROLE_CANDIDATE, "predicted": ROLE_PREDICTED},
             "node_count": len(out_nodes),
             "link_count": len(out_links),
+            **meta_extra,
         },
         "nodes": out_nodes,
         "links": out_links,
@@ -237,7 +303,17 @@ def main() -> None:
     elif pred_file:
         print(f"  No predictions at {resolve(pred_file)} yet (run src/train.py); building without them")
 
-    graph = build(nodes, edges, metagraph, cfg, seed_names, predictions)
+    explanations = None
+    pcfg = cfg["predictions"]
+    if predictions is not None and pcfg["show_explanation_paths"]:
+        exp_file = resolve(pcfg["explanations_file"])
+        if exp_file.exists():
+            explanations = load_explanations(exp_file)
+            print(f"  Adding explanation paths from {exp_file}")
+        else:
+            print(f"  No explanations at {exp_file} (run python src/explain.py); building without them")
+
+    graph = build(nodes, edges, metagraph, cfg, seed_names, predictions, explanations)
 
     out_dir = resolve(cfg["subgraph"]["out_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -249,6 +325,10 @@ def main() -> None:
     by_kind = pd.Series([n["kind"] for n in graph["nodes"]]).value_counts().to_dict()
     print(f"Seeds: {', '.join(graph['meta']['seed_diseases'])}")
     print(f"Subgraph: {graph['meta']['node_count']} nodes, {graph['meta']['link_count']} links {by_kind}")
+    if explanations is not None:
+        n_pred = sum(1 for link in graph["links"] if link["rel"] == graph["meta"]["prediction_relation"])
+        print(f"Explanations: {graph['meta']['explanation_paths']} paths on "
+              f"{graph['meta']['explained_links']} of {n_pred} predicted links")
     print(f"Wrote {out_dir / 'graph.js'}")
 
 
