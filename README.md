@@ -9,8 +9,47 @@ interactive graph viewer.
 ```powershell
 pip install -r requirements.txt
 python src/download_data.py      # ~15 MB into data/raw/
-python src/build_subgraph.py     # writes web/data/graph.js
+python src/train.py              # ~1 min: CV, test evaluation, predictions
+python src/plots.py              # figures in results/figures/
+python src/build_subgraph.py     # writes web/data/graph.js (with predictions)
 ```
+
+## ML method
+
+Task: predict missing `Compound -treats-> Disease` edges (link prediction).
+
+- **Features:** degree-weighted path counts (DWPC) for the metapaths in
+  `config.json`, e.g. `CbGaD` = drug binds a gene that is associated with the
+  disease, `CrCtD` = a similar drug treats the disease. Walks that step out to a
+  node and straight back are dropped. Degree features capture popularity.
+- **No leakage:** test labels are removed from the graph before any feature is
+  computed. Training positives get out-of-fold features, so a pair's own
+  treats edge never contributes to its own features.
+- **Negatives:** random drug-disease pairs with no known treats or palliates
+  edge (10 per positive). Unknown is not the same as false, so this is a
+  positive-unlabeled setting.
+- **Models:** degree baseline (popularity only), logistic regression and
+  XGBoost. Hyperparameters are chosen by 5-fold cross-validation, and each
+  model is evaluated once on a 20% held-out test set.
+- **Evaluation negatives:** every unknown pair not used in training (~207k vs
+  151 positives), so AUPRC reflects realistic class imbalance. Ranking metrics
+  (MRR, Hits@K) are computed per drug and per disease. Results are also split
+  by cold-start drugs (no training indication) and warm drugs.
+- **Predictions:** the best model is retrained on all labels. The top 20
+  unknown drugs per disease go to `results/predictions.csv`, with the
+  metapaths that raised each score as evidence.
+
+### Outputs (`results/`)
+
+| File | Contents |
+|---|---|
+| `metrics.json` | CV score, test metrics, bootstrap 95% CI, cold/warm split per model |
+| `cv_results.csv` | Score of every grid point on every CV fold |
+| `test_scores.csv.gz` | Test pairs with labels and each model's score |
+| `feature_importance.csv` | LR coefficients and XGBoost gain |
+| `split.csv` | Which positives went to test and to which CV fold |
+| `predictions.csv` | Repurposing candidates with evidence |
+| `figures/` | ROC, PR, model comparison, feature importance |
 
 Then open `web/index.html` in a browser. It needs internet access to load the
 `force-graph` library from unpkg.
@@ -48,6 +87,9 @@ config.json            all settings
 src/config.py          config loading and paths
 src/hetionet.py        data loading, edge-type lookup from the metagraph
 src/download_data.py   downloads the data
+src/features.py        metapath parsing and DWPC feature matrices
+src/train.py           split, CV, models, evaluation, predictions
+src/plots.py           result figures
 src/build_subgraph.py  extracts the subgraph and writes web/data/graph.js
 web/                   viewer (index.html, app.js, style.css)
 ```

@@ -230,7 +230,12 @@ def main() -> None:
 
     seed_names = args.diseases if args.diseases else cfg["subgraph"]["seed_diseases"]
     pred_file = args.predictions or cfg["predictions"]["file"]
-    predictions = load_predictions(cfg["predictions"], resolve(pred_file)) if pred_file else None
+    predictions = None
+    if pred_file and resolve(pred_file).exists():
+        predictions = load_predictions(cfg["predictions"], resolve(pred_file))
+        print(f"  Overlaying predictions from {resolve(pred_file)}")
+    elif pred_file:
+        print(f"  No predictions at {resolve(pred_file)} yet (run src/train.py); building without them")
 
     graph = build(nodes, edges, metagraph, cfg, seed_names, predictions)
 

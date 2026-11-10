@@ -26,8 +26,65 @@
     "min_context_targets": 4,
     "out_dir": "web/data"
   },
+  "ml": {
+    "results_dir": "results",
+    "seed": 42,
+    "label_edge": ["Compound", "treats", "Disease"],
+    "exclude_from_negatives": [["Compound", "palliates", "Disease"]],
+    "split": { "test_fraction": 0.2, "cv_folds": 5, "oof_folds": 10 },
+    "bootstrap_samples": 1000,
+    "negatives_per_positive": 10,
+    "damping": 0.4,
+    "metapaths": [
+      "CbGaD",
+      "CbGiGaD",
+      "CbGpPWpGaD",
+      "CuGdD",
+      "CdGuD",
+      "CbGbCtD",
+      "CrCtD",
+      "CiPCiCtD",
+      "CcSEcCtD",
+      "CtDrD",
+      "CtDaGaD"
+    ],
+    "degree_features": [
+      { "metaedge": "CbG", "node": "Compound" },
+      { "metaedge": "CcSE", "node": "Compound" },
+      { "metaedge": "DaG", "node": "Disease" },
+      { "metaedge": "CtD", "node": "Compound" },
+      { "metaedge": "CtD", "node": "Disease" }
+    ],
+    "models": {
+      "degree_baseline": {
+        "type": "feature_product",
+        "grid": { "features": [["deg_CtD_Compound", "deg_CtD_Disease"]] }
+      },
+      "logistic_regression": {
+        "type": "logistic_regression",
+        "grid": { "C": [0.01, 0.1, 1.0, 10.0] }
+      },
+      "xgboost": {
+        "type": "xgboost",
+        "grid": {
+          "n_estimators": [200, 500],
+          "max_depth": [3, 5],
+          "learning_rate": [0.05],
+          "subsample": [0.8],
+          "colsample_bytree": [0.8]
+        }
+      }
+    },
+    "selection_metric": "auprc",
+    "ranking_ks": [1, 3, 10],
+    "final": {
+      "retrain_on_all_labels": true,
+      "top_per_disease": 20,
+      "max_evidence": 3
+    }
+  },
   "predictions": {
-    "file": null,
+    "file": "results/predictions.csv",
     "drug_column": "drug_id",
     "disease_column": "disease_id",
     "score_column": "score",
