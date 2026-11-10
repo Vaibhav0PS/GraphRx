@@ -33,39 +33,54 @@ Task: predict missing `Compound -treats-> Disease` edges (link prediction).
 - **Models:** degree baseline (popularity only), logistic regression and
   XGBoost. Hyperparameters are chosen by 5-fold cross-validation, and each
   model is evaluated once on a 20% held-out test set.
-- **Evaluation negatives:** every unknown pair not used in training (~207k vs
-  151 positives), so AUPRC reflects realistic class imbalance. Ranking metrics
-  (MRR, Hits@K) are computed per drug and per disease. Results are also split
-  by cold-start drugs (no training indication) and warm drugs.
+- **Test negatives:** half of all unknown pairs (~106k vs 151 positives) are
+  reserved before any training or model selection. CV and the GNN's
+  validation only use the other half, so test negatives never influence which
+  model or settings are picked. The class balance stays realistic for AUPRC.
+  Ranking metrics (MRR, Hits@K) are computed per drug and per disease.
+- **Cold-start vs warm drugs:** results are also reported for test drugs with
+  no development treatment edge (cold start) and the rest (warm). Each cohort's
+  positives and negatives involve only that cohort's drugs, and its positive
+  rate is reported, because AUPRC depends on it.
 - **R-GCN (`src/train_gnn.py`):** a relational graph neural network in plain
   PyTorch (no PyG) over all 24 Hetionet edge types, with basis-decomposed
   relation weights and a DistMult decoder. Test treats edges are never in its
   graph. Each epoch, training positives are split into message-passing edges
   and supervised edges, so no pair is predicted through its own edge. It uses
-  the same training negatives (`dev_negatives.csv`) and the same test pairs
-  as the other models. Hyperparameters and epoch count are picked on one
+  the same training negatives (`dev_negatives.csv`) and the same reserved test
+  pairs as the other models. Hyperparameters and epoch count are picked on one
   validation fold (`cv0`), not 5-fold CV. `train.py` overwrites its results,
   so run it after `train.py`.
 - **Predictions:** the best model is retrained on all labels. The top 20
   unknown drugs per disease go to `results/predictions.csv`, with the
   metapaths that raised each score as evidence.
 
-### Results (test set: 151 positives vs ~205k unknown pairs)
+### Results (test set: 151 positives vs 105,740 reserved negatives)
 
-| Model | AUROC | AUPRC (95% CI) | Hits@10 per drug | Hits@10 per disease |
-|---|---|---|---|---|
-| Degree baseline | 0.765 | 0.025 (0.015–0.043) | 0.24 | 0.23 |
-| Logistic regression | 0.972 | 0.235 (0.171–0.298) | 0.87 | 0.53 |
-| XGBoost | 0.978 | 0.192 (0.147–0.247) | 0.88 | 0.56 |
-| R-GCN | 0.901 | 0.013 (0.009–0.020) | 0.40 | 0.15 |
+| Model | AUROC | AUPRC (95% CI) | Hits@10 per drug | Hits@10 per disease | Cold-start AUPRC | Warm AUPRC |
+|---|---|---|---|---|---|---|
+| Degree baseline | 0.768 | 0.032 (0.022–0.049) | 0.30 | 0.28 | 0.001 | 0.051 |
+| Logistic regression | 0.972 | 0.287 (0.225–0.359) | 0.93 | 0.62 | 0.237 | 0.357 |
+| XGBoost (selected by CV) | 0.976 | 0.311 (0.255–0.382) | 0.93 | 0.68 | 0.240 | 0.404 |
+| R-GCN | 0.904 | 0.032 (0.023–0.052) | 0.60 | 0.25 | 0.006 | 0.047 |
 
-The metapath models beat the R-GCN by a wide margin, and the GNN's
-validation score shows the same gap, so this is not test-set noise. Likely
-reasons: only ~480 training positives for a model with ~3M parameters (it
-overfits within ~80 epochs), validation scores that vary a lot across folds
-and seeds (AUPRC 0.05–0.13 on subsampled negatives), and metapath features
-that encode exactly the drug-gene-disease patterns the task depends on. All
-models do poorly on cold-start drugs, which have no other known treatment.
+A random ranking would get AUPRC 0.0014 overall, 0.0007 for cold-start drugs
+(59 positives, 83,296 negatives) and 0.0041 for warm drugs (92 positives,
+22,444 negatives). Numbers are from a clean install of `requirements.txt`.
+XGBoost results shift slightly between versions: 3.1.1 gave test AUPRC 0.337,
+3.4.1 gave 0.311. The other models are identical across versions.
+
+- **Metapath models vs R-GCN:** the metapath models win by a wide margin, and
+  the GNN's validation score shows the same gap, so this is not test-set
+  noise. Likely reasons: only ~480 training positives for a model with ~3M
+  parameters (it overfits within ~80 epochs), validation scores that vary a
+  lot across folds and seeds, and metapath features that encode exactly the
+  drug-gene-disease patterns the task depends on.
+- **Cold start:** for drugs with no development treatment edge, the metapath
+  models still reach AUPRC ~0.24, about 340 times the random rate, because
+  features such as shared targets and side effects don't need a known
+  indication. The degree baseline and the R-GCN fail almost completely on
+  these drugs; both rely on the drug's own treatment edges.
 
 ### Outputs (`results/`)
 
@@ -78,6 +93,7 @@ models do poorly on cold-start drugs, which have no other known treatment.
 | `split.csv` | Which positives went to test and to which CV fold |
 | `predictions.csv` | Repurposing candidates with evidence |
 | `explanations.json` | Top concrete paths per prediction and evidence metapath |
+| `prediction_graph_label_edges.csv` | Treats edges in the graph that scored the predictions (explanations use the same graph) |
 | `dev_negatives.csv` | Training negatives of the test-evaluation model (shared with other models) |
 | `gnn_history.csv` | R-GCN loss and validation AUPRC per epoch for every run |
 | `figures/` | ROC, PR, model comparison, feature importance |

@@ -95,6 +95,7 @@ def to_torch(m: sp.spmatrix) -> torch.Tensor:
         torch.from_numpy(m.indices.astype(np.int64)),
         torch.from_numpy(m.data.astype(np.float32)),
         size=m.shape,
+        check_invariants=False,  # built from a valid scipy CSR matrix; skip the per-call check
     )
 
 
