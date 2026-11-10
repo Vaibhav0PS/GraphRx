@@ -1,5 +1,35 @@
+# Generated data and outputs (rebuild with the scripts in src/)
 data/raw/
 web/data/
 results/
-__pycache__/
 *.part
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Presentations, reports and Office lock files
+*.ppt
+*.pptx
+*.pdf
+*.doc
+*.docx
+~$*
+
+# Deployment and secrets
+.vercel/
+.env
+.env.*
+
+# Node (browser test tooling)
+node_modules/
+
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
