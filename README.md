@@ -111,8 +111,9 @@ Then open `web/index.html` in a browser. It needs internet access to load the
 - **Resize the side panel** by dragging its left edge (double-click the edge to
   reset), or use the ⤢ button to switch between normal and wide. The width is
   remembered. When wide, explanation paths are shown side by side.
-- With nothing selected, the side panel lists the **top predictions** grouped
-  by disease. Click a drug to open it, or press Escape on the list to hide the panel.
+- The side panel starts closed. Click **★ Top predictions** in the toolbar to
+  list the predictions grouped by disease; click it again, press × or Escape to
+  close it. Clicking a node opens its details, and clicking the background closes them.
 - Gold is used only for predictions: dashed gold links are predicted
   treatments, a solid gold ring marks a drug with a prediction, and a dotted
   ring marks a heuristic candidate.

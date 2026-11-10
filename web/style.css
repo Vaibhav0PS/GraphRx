@@ -51,6 +51,10 @@ input[type="checkbox"] { flex: none; margin: 0; accent-color: var(--accent); }
 input:focus { outline: 1px solid var(--accent); }
 button { cursor: pointer; }
 button:hover { border-color: var(--accent); }
+#toolbar button.wide { width: 100%; margin-top: 8px; text-align: left; }
+#toggle-predictions { color: var(--gold); }
+#toggle-predictions.active { background: rgba(255, 213, 79, 0.14); border-color: var(--gold); }
+#toggle-predictions[hidden] { display: none; }
 
 #legend { bottom: 14px; left: 14px; padding: 10px 14px; min-width: 200px; }
 #legend h2 { margin: 6px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }

@@ -237,24 +237,42 @@
   const panel = document.getElementById("panel");
   const panelBody = document.getElementById("panel-body");
 
-  // node = null goes back to the overview (top predictions) in the panel.
+  // What the side panel shows: null (closed), "overview" (top predictions) or "node".
+  let panelMode = null;
+  const predictionsButton = document.getElementById("toggle-predictions");
+
+  function setPanelMode(mode) {
+    panelMode = mode;
+    panel.hidden = mode === null;
+    predictionsButton.classList.toggle("active", mode === "overview");
+    predictionsButton.setAttribute("aria-pressed", String(mode === "overview"));
+  }
+
+  // node = null deselects and closes the panel; the top-predictions list only opens
+  // from its toolbar button.
   function selectNode(node) {
     activePath = null;
     markActiveItem();
     selectedNode = node;
     setHighlight(hoverNode || node);
     if (!node) {
-      renderOverview();
+      setPanelMode(null);
       return;
     }
     renderPanel(node);
+    setPanelMode("node");
     // Fit the node and all its visible neighbors in the part of the view not under the panel.
     fitNodes(new Set([node, ...[...node.neighbors].filter(isVisible)]));
   }
 
   function closePanel() {
     selectNode(null);
-    panel.hidden = true;
+  }
+
+  function openOverview() {
+    selectNode(null);
+    renderOverview();
+    setPanelMode("overview");
   }
 
   function el(tag, attrs = {}, ...children) {
@@ -327,7 +345,7 @@
     panel.hidden = false;
   }
 
-  // ---------- overview: what the panel shows when nothing is selected ----------
+  // ---------- overview: top predictions, opened from the toolbar button ----------
   function renderOverview() {
     panelBody.replaceChildren();
     const drugWord = meta.kinds.drug.toLowerCase();
@@ -337,7 +355,6 @@
       panelBody.append(el("div", { className: "meta" },
         `No model predictions in this graph. Run the training scripts, then rebuild it. ` +
         `Click any node to explore its connections.`));
-      panel.hidden = false;
       return;
     }
     panelBody.append(el("div", { className: "meta intro" },
@@ -361,7 +378,6 @@
           .map((l) => nodeItem(endpoint(l.source), l.score != null ? l.score.toFixed(3) : ""));
         panelBody.append(head, el("ul", {}, ...items));
       });
-    panel.hidden = false;
   }
 
   // ---------- explanation paths ("Why predicted?") ----------
@@ -584,14 +600,15 @@
     refit();
   });
 
-  // × on a node goes back to the overview; × on the overview hides the panel.
-  document.getElementById("panel-close").onclick = () => (selectedNode ? selectNode(null) : closePanel());
+  // × and Escape close the panel (Escape first clears a highlighted path).
+  document.getElementById("panel-close").onclick = closePanel;
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (activePath) clearPath();
-    else if (selectedNode) selectNode(null);
     else closePanel();
   });
+  predictionsButton.onclick = () => (panelMode === "overview" ? closePanel() : openOverview());
+  if (!predLinks.length) predictionsButton.hidden = true;
 
   // ---------- toolbar ----------
   const countBy = (key) => data.nodes.reduce((m, n) => ((m[n[key]] = (m[n[key]] || 0) + 1), m), {});
@@ -669,5 +686,4 @@
     graph.width(window.innerWidth).height(window.innerHeight);
     setPanelWidth(panelWidth, false); // re-clamp to the new window size
   });
-  renderOverview();
 })();
