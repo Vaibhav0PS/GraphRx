@@ -92,10 +92,10 @@
     "model_name": "rgcn",
     "seed": 42,
     "validation_fold": "cv0",
-    "val_negative_fraction": 0.2,
+    "val_negative_fraction": 1.0,
     "supervision_fraction": 0.3,
     "negatives_per_positive": 10,
-    "max_epochs": 300,
+    "max_epochs": 200,
     "eval_every": 10,
     "patience": 5,
     "graph_edges": "all",
@@ -104,10 +104,10 @@
     "decoder": "distmult",
     "grid": {
       "hidden_dim": [64],
-      "num_layers": [2],
-      "dropout": [0.2],
-      "lr": [0.01],
-      "weight_decay": [0.0, 0.00001]
+      "num_layers": [2, 3],
+      "dropout": [0.5],
+      "lr": [0.005],
+      "weight_decay": [0.0, 0.0001]
     }
   },
   "predictions": {

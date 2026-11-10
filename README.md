@@ -9,7 +9,8 @@ interactive graph viewer.
 ```powershell
 pip install -r requirements.txt
 python src/download_data.py      # ~15 MB into data/raw/
-python src/train.py              # ~1 min: CV, test evaluation, predictions
+python src/train.py              # ~1.5 min: CV, test evaluation, predictions
+python src/train_gnn.py          # ~5 min: R-GCN, same test set (run after train.py)
 python src/plots.py              # figures in results/figures/
 python src/explain.py            # concrete graph paths behind each prediction
 python src/build_subgraph.py     # writes web/data/graph.js (with predictions)
@@ -36,9 +37,35 @@ Task: predict missing `Compound -treats-> Disease` edges (link prediction).
   151 positives), so AUPRC reflects realistic class imbalance. Ranking metrics
   (MRR, Hits@K) are computed per drug and per disease. Results are also split
   by cold-start drugs (no training indication) and warm drugs.
+- **R-GCN (`src/train_gnn.py`):** a relational graph neural network in plain
+  PyTorch (no PyG) over all 24 Hetionet edge types, with basis-decomposed
+  relation weights and a DistMult decoder. Test treats edges are never in its
+  graph. Each epoch, training positives are split into message-passing edges
+  and supervised edges, so no pair is predicted through its own edge. It uses
+  the same training negatives (`dev_negatives.csv`) and the same test pairs
+  as the other models. Hyperparameters and epoch count are picked on one
+  validation fold (`cv0`), not 5-fold CV. `train.py` overwrites its results,
+  so run it after `train.py`.
 - **Predictions:** the best model is retrained on all labels. The top 20
   unknown drugs per disease go to `results/predictions.csv`, with the
   metapaths that raised each score as evidence.
+
+### Results (test set: 151 positives vs ~205k unknown pairs)
+
+| Model | AUROC | AUPRC (95% CI) | Hits@10 per drug | Hits@10 per disease |
+|---|---|---|---|---|
+| Degree baseline | 0.765 | 0.025 (0.015–0.043) | 0.24 | 0.23 |
+| Logistic regression | 0.972 | 0.235 (0.171–0.298) | 0.87 | 0.53 |
+| XGBoost | 0.978 | 0.192 (0.147–0.247) | 0.88 | 0.56 |
+| R-GCN | 0.901 | 0.013 (0.009–0.020) | 0.40 | 0.15 |
+
+The metapath models beat the R-GCN by a wide margin, and the GNN's
+validation score shows the same gap, so this is not test-set noise. Likely
+reasons: only ~480 training positives for a model with ~3M parameters (it
+overfits within ~80 epochs), validation scores that vary a lot across folds
+and seeds (AUPRC 0.05–0.13 on subsampled negatives), and metapath features
+that encode exactly the drug-gene-disease patterns the task depends on. All
+models do poorly on cold-start drugs, which have no other known treatment.
 
 ### Outputs (`results/`)
 
@@ -52,6 +79,7 @@ Task: predict missing `Compound -treats-> Disease` edges (link prediction).
 | `predictions.csv` | Repurposing candidates with evidence |
 | `explanations.json` | Top concrete paths per prediction and evidence metapath |
 | `dev_negatives.csv` | Training negatives of the test-evaluation model (shared with other models) |
+| `gnn_history.csv` | R-GCN loss and validation AUPRC per epoch for every run |
 | `figures/` | ROC, PR, model comparison, feature importance |
 
 Then open `web/index.html` in a browser. It needs internet access to load the
@@ -98,6 +126,7 @@ src/features.py        metapath parsing and DWPC feature matrices
 src/train.py           split, CV, models, evaluation, predictions
 src/plots.py           result figures
 src/explain.py         path explanations for predictions
+src/train_gnn.py       R-GCN model evaluated on the same split
 src/build_subgraph.py  extracts the subgraph and writes web/data/graph.js
 web/                   viewer (index.html, app.js, style.css)
 ```
