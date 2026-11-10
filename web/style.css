@@ -64,27 +64,65 @@ button:hover { border-color: var(--accent); }
 .ring.dashed { border-style: dotted; }
 .dash { width: 18px; border-top: 2px dashed var(--gold); flex-shrink: 0; }
 
+/* Side panel: fixed header buttons, scrolling body, resizable from its left edge. */
 #panel {
   top: 14px;
   right: 14px;
   bottom: 14px;
-  width: 340px;
-  padding: 16px;
-  overflow-y: auto;
+  width: var(--panel-width, 400px);
+  max-width: 70vw;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.45;
 }
-#panel-close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+#panel[hidden] { display: none; }
+#panel-body { flex: 1; overflow-y: auto; padding: 18px 20px 24px 22px; }
+#panel-tools { position: absolute; top: 10px; right: 12px; display: flex; gap: 2px; z-index: 2; }
+#panel-tools button {
   border: none;
   background: none;
-  font-size: 20px;
+  color: var(--muted);
+  font-size: 18px;
   line-height: 1;
+  padding: 4px 6px;
+  border-radius: 6px;
 }
-#panel h2 { margin: 0 24px 6px 0; font-size: 18px; }
-#panel h3 { margin: 16px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-#panel .meta { color: var(--muted); }
+#panel-tools button:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+#panel-resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 3;
+}
+#panel-resize::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  height: 48px;
+  margin-top: -24px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 0.15s, height 0.15s, margin-top 0.15s;
+}
+#panel-resize:hover::after, body.resizing #panel-resize::after {
+  background: var(--accent);
+  height: 96px;
+  margin-top: -48px;
+}
+body.resizing { cursor: ew-resize; user-select: none; }
+
+#panel h2 { margin: 0 64px 6px 0; font-size: 20px; line-height: 1.25; }
+#panel h3 { margin: 22px 0 8px; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+#panel .meta { color: var(--muted); font-size: 13px; }
 #panel .intro { line-height: 1.45; margin-bottom: 4px; }
+#panel .key { font-size: 12px; margin: -2px 0 6px; }
 #panel h3.group { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--text); font-weight: 600; }
 #panel h3.group .chip { cursor: pointer; }
 #panel .badge {
@@ -102,67 +140,94 @@ button:hover { border-color: var(--accent); }
   background: rgba(255, 213, 79, 0.08);
   border-radius: 4px;
 }
-#panel ul { list-style: none; margin: 0; padding: 0; }
+/* Lists flow into extra columns when the panel is widened. */
+#panel ul { list-style: none; margin: 0; padding: 0; column-width: 240px; column-gap: 20px; }
 #panel li {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 4px;
-  border-radius: 4px;
+  padding: 4px 6px;
+  border-radius: 5px;
   cursor: pointer;
+  break-inside: avoid;
 }
 #panel li:hover { background: rgba(255, 255, 255, 0.06); }
 #panel li .score { margin-left: auto; color: var(--gold); }
 
 /* "Why predicted?" explanation paths */
+#panel .chip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+#panel .chip .dot { flex-shrink: 0; }
+#panel .chip.clickable { cursor: pointer; }
+#panel .chip.clickable:hover { text-decoration: underline; }
+
 #panel .why {
-  margin: 6px 0 10px;
-  padding: 6px 8px;
+  margin: 8px 0 12px;
+  border: 1px solid var(--border);
   border-left: 3px solid var(--gold);
-  background: rgba(255, 213, 79, 0.05);
-  border-radius: 4px;
+  background: rgba(255, 213, 79, 0.04);
+  border-radius: 8px;
 }
 #panel .why summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 4px 6px;
+  padding: 10px 12px;
   cursor: pointer;
   list-style: none;
+  font-weight: 600;
 }
 #panel .why summary::-webkit-details-marker { display: none; }
-#panel .why summary::before { content: "▸"; color: var(--muted); margin-right: 2px; }
+#panel .why summary::before { content: "▸"; color: var(--muted); width: 12px; }
 #panel .why[open] summary::before { content: "▾"; }
-#panel .why .score { margin-left: auto; color: var(--gold); }
-#panel .chip { display: inline-flex; align-items: center; gap: 4px; }
-#panel .chip.clickable:hover { text-decoration: underline; }
-#panel .metapath { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin: 10px 0 3px; font-size: 12px; }
-#panel .metapath .desc { color: var(--text); font-weight: 500; flex: 1 1 100%; }
+#panel .why[open] summary { border-bottom: 1px solid var(--border); }
+#panel .why .why-body { padding: 4px 12px 10px; }
+#panel .pill {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(255, 213, 79, 0.16);
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+#panel .metapath { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 14px 0 6px; }
+#panel .metapath .desc { color: var(--text); font-weight: 500; font-size: 13px; flex: 1 1 100%; }
 #panel .metapath .code {
-  font: 10px ui-monospace, Consolas, monospace;
+  font: 11px ui-monospace, Consolas, monospace;
   color: var(--muted);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 0 5px;
 }
-#panel .metapath .score { margin-left: auto; color: var(--gold); }
+#panel .metapath .contrib { margin-left: auto; color: var(--gold); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Paths of one metapath side by side once the panel is wide enough. */
+#panel .paths { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
 #panel .path {
-  padding: 4px 6px;
-  margin: 2px 0;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  padding: 10px 12px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
   cursor: pointer;
 }
 #panel .path:hover { background: rgba(255, 255, 255, 0.06); }
 #panel .path.active { border-color: var(--gold); background: rgba(255, 213, 79, 0.12); }
-#panel .chain { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px; line-height: 1.5; }
-/* A relation and the node it leads to stay together; a long node name wraps inside. */
-#panel .chain .step { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; }
-#panel .chain .rel { white-space: nowrap; }
-#panel .chip { min-width: 0; overflow-wrap: anywhere; }
-#panel .chip .dot { flex-shrink: 0; }
-#panel .chain .rel { color: var(--muted); font-size: 11px; }
-#panel .share { color: var(--muted); font-size: 11px; text-align: right; }
+
+/* A path as a vertical list: one node per line, relations on the connector between. */
+#panel .steps { display: flex; flex-direction: column; }
+#panel .steps .node { display: flex; align-items: center; min-height: 22px; }
+#panel .steps .rel {
+  margin-left: 4px;
+  padding: 1px 0 1px 13px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+#panel .steps .rel .arrow { display: inline-block; width: 14px; color: var(--text); }
+#panel .share { margin-top: 6px; color: var(--muted); font-size: 12px; text-align: right; }
 
 #message {
   position: fixed;

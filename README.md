@@ -108,6 +108,9 @@ Then open `web/index.html` in a browser. It needs internet access to load the
 - Use the legend checkboxes to hide node types.
 - Gold rings mark **heuristic candidates**: drugs that bind several genes
   associated with a disease but are not known treatments for it.
+- **Resize the side panel** by dragging its left edge (double-click the edge to
+  reset), or use the ⤢ button to switch between normal and wide. The width is
+  remembered. When wide, explanation paths are shown side by side.
 - With nothing selected, the side panel lists the **top predictions** grouped
   by disease. Click a drug to open it, or press Escape on the list to hide the panel.
 - Gold is used only for predictions: dashed gold links are predicted

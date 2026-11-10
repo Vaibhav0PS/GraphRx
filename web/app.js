@@ -381,31 +381,28 @@
     return chip;
   }
 
-  // Relation between path positions i and i+1, with an arrow in the stored direction.
-  function relationText(edge, fromId) {
+  // Relation between consecutive path nodes, for the vertical step list. The arrow
+  // follows the stored edge: ↓ = the upper node acts on the lower (e.g. "treats"),
+  // ↑ = the lower node acts on the upper, ↕ = undirected (e.g. "resembles").
+  function relationStep(edge, upperId) {
     const kindsKey = [byId.get(edge.source).kind, edge.rel, byId.get(edge.target).kind].join("|");
-    if (symmetric.has(kindsKey)) return `—${label(edge.rel)}—`;
-    return edge.source === fromId ? `—${label(edge.rel)}→` : `←${label(edge.rel)}—`;
+    const arrow = symmetric.has(kindsKey) ? "↕" : edge.source === upperId ? "↓" : "↑";
+    const title = `${byId.get(edge.source).name} ${label(edge.rel)} ${byId.get(edge.target).name}`;
+    return el("div", { className: "rel", title }, el("span", { className: "arrow" }, arrow), label(edge.rel));
   }
 
   function pathItem(link, path, key) {
     const ok = path.nodes.every((id) => byId.has(id)) && path.edges.every((e) => byId.has(e.source) && byId.has(e.target));
-    const chain = el("div", { className: "chain" });
+    const steps = el("div", { className: "steps" });
     if (ok) {
-      // Each relation is kept on one line with the node it leads to, so a line break
-      // never separates "—causes→" from what is caused.
       path.nodes.forEach((id, i) => {
-        if (i === 0) {
-          chain.append(nodeChip(byId.get(id)));
-          return;
-        }
-        chain.append(el("span", { className: "step" },
-          el("span", { className: "rel" }, relationText(path.edges[i - 1], path.nodes[i - 1])), nodeChip(byId.get(id))));
+        if (i > 0) steps.append(relationStep(path.edges[i - 1], path.nodes[i - 1]));
+        steps.append(el("div", { className: "node" }, nodeChip(byId.get(id))));
       });
     } else {
-      chain.append("Path nodes are missing from the graph data.");
+      steps.append("Path nodes are missing from the graph data.");
     }
-    const item = el("div", { className: "path", title: "Show this path in the graph" }, chain);
+    const item = el("div", { className: "path", title: "Show this path in the graph" }, steps);
     if (path.share != null) {
       item.append(el("div", { className: "share", title: "Share of this metapath's degree-weighted path count" }, `${pct(path.share)} of signal`));
     }
@@ -420,18 +417,21 @@
       .filter((l) => l.rel === predRel && Array.isArray(l.explanations))
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     if (!preds.length) return;
-    panelBody.append(el("h3", {}, `Why predicted? (${preds.length})`));
+    panelBody.append(el("h3", {}, `Why predicted? (${preds.length})`),
+      el("div", { className: "meta key" },
+        "↓ upper acts on lower · ↑ lower acts on upper · ↕ no direction. Click a path to show it in the graph."));
 
     preds.forEach((link, li) => {
       const src = endpoint(link.source);
       const tgt = endpoint(link.target);
       const summary = el("summary", {}, nodeChip(src, src === n ? null : () => selectNode(src)), " → ",
         nodeChip(tgt, tgt === n ? null : () => selectNode(tgt)));
-      if (link.score != null) summary.append(el("span", { className: "score" }, link.score.toFixed(3)));
-      const box = el("details", { className: "why", open: li === 0 }, summary);
+      if (link.score != null) summary.append(el("span", { className: "pill", title: "Model score" }, link.score.toFixed(3)));
+      const body = el("div", { className: "why-body" });
+      const box = el("details", { className: "why", open: li === 0 }, summary, body);
 
       if (!link.explanations.length) {
-        box.append(el("div", { className: "meta" }, `No supporting paths found between ${src.name} and ${tgt.name}.`));
+        body.append(el("div", { className: "meta" }, `No supporting paths found between ${src.name} and ${tgt.name}.`));
       }
       // Group paths by metapath, in the order given (strongest contribution first).
       const groups = new Map();
@@ -446,9 +446,11 @@
         const head = el("div", { className: "metapath" }, el("span", { className: "desc" }, desc),
           el("span", { className: "code", title: "Metapath code" }, metapath));
         if (contribution != null) {
-          head.append(el("span", { className: "score", title: "Contribution to the model's log-odds" }, `+${contribution.toFixed(2)}`));
+          head.append(el("span", { className: "contrib", title: "Contribution to the model's log-odds" },
+            `+${contribution.toFixed(2)} to score`));
         }
-        box.append(head, ...items.map(([p, pi]) => pathItem(link, p, JSON.stringify([src.id, tgt.id, pi]))));
+        body.append(head, el("div", { className: "paths" },
+          ...items.map(([p, pi]) => pathItem(link, p, JSON.stringify([src.id, tgt.id, pi])))));
       });
       if (box.querySelector(".path.active")) box.open = true;
       panelBody.append(box);
@@ -514,6 +516,73 @@
     graph.centerAt((box.x[0] + box.x[1]) / 2 - shift, (box.y[0] + box.y[1]) / 2, ms);
     graph.zoom(k, ms);
   }
+
+  // ---------- panel width: drag the left edge, or toggle with the widen button ----------
+  const PANEL_DEFAULT = 400;
+  const PANEL_MIN = 300;
+  const PANEL_WIDE = 720;
+  const PANEL_KEY = "repurposing-viewer.panel-width";
+  const expandButton = document.getElementById("panel-expand");
+  // Never wider than 70% of the window, so some graph always stays visible.
+  const panelMax = () => Math.max(PANEL_MIN, Math.round(window.innerWidth * 0.7));
+  const clampWidth = (w) => Math.round(Math.min(Math.max(w, PANEL_MIN), panelMax()));
+  let panelWidth = PANEL_DEFAULT;
+
+  function setPanelWidth(w, save = true) {
+    panelWidth = clampWidth(w);
+    document.documentElement.style.setProperty("--panel-width", `${panelWidth}px`);
+    const wide = panelWidth >= (PANEL_DEFAULT + PANEL_WIDE) / 2;
+    expandButton.innerHTML = wide ? "&#x2921;" : "&#x2922;";
+    expandButton.title = wide ? "Narrow panel" : "Widen panel";
+    if (save) {
+      try {
+        localStorage.setItem(PANEL_KEY, String(panelWidth));
+      } catch (e) {
+        /* storage can be unavailable for file:// pages; the width then just isn't remembered */
+      }
+    }
+  }
+
+  // Keep what the user is looking at in view after the panel changes size.
+  function refit() {
+    if (activePath) fitNodes(activePath.nodes);
+    else if (selectedNode) fitNodes(new Set([selectedNode, ...[...selectedNode.neighbors].filter(isVisible)]));
+  }
+
+  let saved = NaN;
+  try {
+    saved = Number(localStorage.getItem(PANEL_KEY));
+  } catch (e) {
+    /* see setPanelWidth */
+  }
+  setPanelWidth(Number.isFinite(saved) && saved > 0 ? saved : PANEL_DEFAULT, false);
+
+  expandButton.onclick = () => {
+    setPanelWidth(panelWidth >= (PANEL_DEFAULT + PANEL_WIDE) / 2 ? PANEL_DEFAULT : PANEL_WIDE);
+    refit();
+  };
+
+  const handle = document.getElementById("panel-resize");
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing");
+    const right = window.innerWidth - panel.getBoundingClientRect().right;
+    const move = (ev) => setPanelWidth(window.innerWidth - right - ev.clientX, false);
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      document.body.classList.remove("resizing");
+      setPanelWidth(panelWidth);
+      refit();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up, { once: true });
+    handle.addEventListener("pointercancel", up, { once: true });
+  });
+  handle.addEventListener("dblclick", () => {
+    setPanelWidth(PANEL_DEFAULT);
+    refit();
+  });
 
   // × on a node goes back to the overview; × on the overview hides the panel.
   document.getElementById("panel-close").onclick = () => (selectedNode ? selectNode(null) : closePanel());
@@ -596,6 +665,9 @@
   }
   legend.append(el("div", { className: "static meta" }, "Bigger node = more connections"));
 
-  window.addEventListener("resize", () => graph.width(window.innerWidth).height(window.innerHeight));
+  window.addEventListener("resize", () => {
+    graph.width(window.innerWidth).height(window.innerHeight);
+    setPanelWidth(panelWidth, false); // re-clamp to the new window size
+  });
   renderOverview();
 })();
